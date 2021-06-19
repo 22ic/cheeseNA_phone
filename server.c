@@ -5,6 +5,7 @@
 #include <netinet/tcp.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/event.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -30,27 +31,51 @@ int main(int argc, char** argv) {
   ret = listen(ss, 10);
   if (ret == -1) die("listen");
 
-  struct sockaddr_in client_addr;
-  socklen_t len = sizeof(struct sockaddr_in);
-  int s = accept(ss, (struct sockaddr*)&client_addr, &len);
-  if (s == -1) die("socket2");
+  int kq = kqueue();
+  if (kq == -1) die("kqueue");
 
-  close(ss);
+  struct kevent kev;
+  EV_SET(&kev, ss, EVFILT_READ, EV_ADD, 0, 0, NULL);
+  ret = kevent(kq, &kev, 1, NULL, 0, NULL);
+  if (ret == -1) die("kevent");
+
+  int nevents = 10;
+  struct kevent kevlist[nevents];
 
   int bufsize = 1024 * 2;
   unsigned char buf[bufsize];
-  int n;
 
   while (1) {
-    n = recv(s, buf, bufsize, 0);
-    // printf("n: %d\n", n);
-    if (n == -1) die("recv");
-    if (n == 0) break;
-    n = send(s, buf, n, 0);
-    if (n == -1) die("send");
+    int kn = kevent(kq, NULL, 0, kevlist, nevents, NULL);
+    for (int i = 0; i < kn; i++) {
+      int fd = kevlist[i].ident;
+      if (fd == ss) {
+        struct sockaddr_in client_addr;
+        socklen_t len = sizeof(struct sockaddr_in);
+        int newsock = accept(ss, (struct sockaddr*)&client_addr, &len);
+        if (newsock == -1) die("newsock");
+        printf("new sock created: %d\n", newsock);
+        EV_SET(&kev, newsock, EVFILT_READ, EV_ADD, 0, 0, NULL);
+        ret = kevent(kq, &kev, 1, NULL, 0, NULL);
+        if (ret == -1) die("kevent accept");
+      } else {
+        int n = recv(fd, buf, bufsize, 0);
+        if (n == -1) die("recv");
+        if (n == 0) {
+          printf("disconnected from %d\n", fd);
+          close(fd);
+        }
+        if (n > 0) {
+          printf("data received from %d\n", fd);
+          write(1, buf, n);
+          n = send(fd, buf, n, 0);
+          if (n == -1) die("send");
+        }
+      }
+    }
   }
 
-  close(s);
+  close(ss);
 
   return 0;
 }
