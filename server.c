@@ -45,6 +45,13 @@ int main(int argc, char** argv) {
   int bufsize = 1024 * 2;
   unsigned char buf[bufsize];
 
+  int nclient = nevents - 1;
+  int client[nclient];
+  for (int i = 0; i < nclient; i++) {
+    client[i] = -1;
+  }
+  int cnum = 0;
+
   while (1) {
     int kn = kevent(kq, NULL, 0, kevlist, nevents, NULL);
     for (int i = 0; i < kn; i++) {
@@ -55,6 +62,16 @@ int main(int argc, char** argv) {
         int newsock = accept(ss, (struct sockaddr*)&client_addr, &len);
         if (newsock == -1) die("newsock");
         printf("new sock created: %d\n", newsock);
+
+        if (cnum == nclient) die("too many client");
+        cnum += 1;
+        for (int j = 0; j < nclient; j++) {
+          if (client[j] == -1) {
+            client[j] = newsock;
+            break;
+          }
+        }
+
         EV_SET(&kev, newsock, EVFILT_READ, EV_ADD, 0, 0, NULL);
         ret = kevent(kq, &kev, 1, NULL, 0, NULL);
         if (ret == -1) die("kevent accept");
@@ -64,12 +81,25 @@ int main(int argc, char** argv) {
         if (n == 0) {
           printf("disconnected from %d\n", fd);
           close(fd);
+
+          cnum -= 1;
+          for (int j = 0; j < nclient; j++) {
+            if (client[j] == fd) {
+              client[j] = -1;
+              break;
+            }
+          }
         }
         if (n > 0) {
           printf("data received from %d\n", fd);
           write(1, buf, n);
-          n = send(fd, buf, n, 0);
-          if (n == -1) die("send");
+
+          for (int j = 0; j < nclient; j++) {
+            if (client[j] != -1 && client[j] != fd) {
+              n = send(client[j], buf, n, 0);
+              if (n == -1) die("send");
+            }
+          }
         }
       }
     }
