@@ -5,6 +5,7 @@
 #include <netinet/tcp.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/event.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -16,7 +17,15 @@ void die(char* s) {
 }
 
 int main(int argc, char** argv) {
-  if (argc != 2) die("./server <port>");
+  if (argc < 2) die("./server [option] <port>");
+  int quiet = 0;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-q") == 0) {
+      quiet = 1;
+    }
+  }
+  if (quiet == 1) printf("quiet mode\n");
+
   int ss = socket(PF_INET, SOCK_STREAM, 0);
   if (ss == -1) die("socket");
 
@@ -91,8 +100,8 @@ int main(int argc, char** argv) {
           }
         }
         if (n > 0) {
-          printf("data received from %d\n", fd);
-          write(1, buf, n);
+          if (!quiet) printf("data received from %d\n", fd);
+          if (!quiet) write(1, buf, n);
 
           for (int j = 0; j < nclient; j++) {
             if (client[j] != -1 && client[j] != fd) {
