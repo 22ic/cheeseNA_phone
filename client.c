@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
   int nevents = 2;
   struct kevent kevlist[nevents];
 
-  int bufsize = 1024 * 2;
+  int bufsize = 1 * 2;
   unsigned char buf[bufsize];
 
   while (1) {

@@ -16,6 +16,11 @@ void die(char* s) {
   exit(1);
 }
 
+struct client {
+  int fd;
+  short data;
+};
+
 int main(int argc, char** argv) {
   if (argc < 2) die("./server [option] <port>");
   int quiet = 0;
@@ -51,13 +56,14 @@ int main(int argc, char** argv) {
   int nevents = 10;
   struct kevent kevlist[nevents];
 
-  int bufsize = 1024 * 2;
-  unsigned char buf[bufsize];
+  int bufsize = 1 * 2;
+  short buf[bufsize / 2];
 
   int nclient = nevents - 1;
-  int client[nclient];
+  struct client clist[nclient];
   for (int i = 0; i < nclient; i++) {
-    client[i] = -1;
+    clist[i].fd = -1;
+    clist[i].data = 0;
   }
   int cnum = 0;
 
@@ -75,8 +81,8 @@ int main(int argc, char** argv) {
         if (cnum == nclient) die("too many client");
         cnum += 1;
         for (int j = 0; j < nclient; j++) {
-          if (client[j] == -1) {
-            client[j] = newsock;
+          if (clist[j].fd == -1) {
+            clist[j].fd = newsock;
             break;
           }
         }
@@ -93,8 +99,8 @@ int main(int argc, char** argv) {
 
           cnum -= 1;
           for (int j = 0; j < nclient; j++) {
-            if (client[j] == fd) {
-              client[j] = -1;
+            if (clist[j].fd == fd) {
+              clist[j].fd = -1;
               break;
             }
           }
@@ -104,8 +110,8 @@ int main(int argc, char** argv) {
           if (!quiet) write(1, buf, n);
 
           for (int j = 0; j < nclient; j++) {
-            if (client[j] != -1 && client[j] != fd) {
-              n = send(client[j], buf, n, 0);
+            if (clist[j].fd != -1 && clist[j].fd != fd) {
+              n = send(clist[j].fd, buf, n, 0);
               if (n == -1) die("send");
             }
           }
