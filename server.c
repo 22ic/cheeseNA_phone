@@ -19,9 +19,11 @@ void die(char* s) {
 struct client {
   int fd;
   short data;
+  struct sockaddr_in addr;
 };
 
 int main(int argc, char** argv) {
+  const int LISTEN_OFFSET = 2;
   if (argc < 2) die("./server [option] <port>");
   int quiet = 0;
   for (int i = 1; i < argc; i++) {
@@ -67,6 +69,13 @@ int main(int argc, char** argv) {
   }
   int cnum = 0;
 
+  int sockmatrix[nclient][nclient];
+  for (int i = 0; i < nclient; i++) {
+    for (int j = 0; j < nclient; j++) {
+      sockmatrix[i][j] = -1;
+    }
+  }
+
   while (1) {
     int kn = kevent(kq, NULL, 0, kevlist, nevents, NULL);
     for (int i = 0; i < kn; i++) {
@@ -82,7 +91,31 @@ int main(int argc, char** argv) {
         cnum += 1;
         for (int j = 0; j < nclient; j++) {
           if (clist[j].fd == -1) {
+            client_addr.sin_port = htons(atoi(argv[1]) + LISTEN_OFFSET);
+            for (int k = 0; k < nclient; k++) {
+              if (clist[k].fd != -1) {
+                sockmatrix[k][j] = socket(PF_INET, SOCK_STREAM,
+                                          0);  // sock for sending to newsock
+                if (sockmatrix[k][j] == -1) die("socket k j");
+
+                int ret =
+                    connect(sockmatrix[k][j], (struct sockaddr*)&client_addr,
+                            sizeof(client_addr));
+                if (ret == -1) die("connect k j");
+
+                sockmatrix[j][k] = socket(PF_INET, SOCK_STREAM,
+                                          0);  // sock for sending to old sock
+                if (sockmatrix[j][k] == -1) die("socket j k");
+
+                ret = connect(sockmatrix[j][k],
+                              (struct sockaddr*)&(clist[k].addr),
+                              sizeof(clist[k].addr));
+                if (ret == -1) die("connect j k");
+              }
+            }
             clist[j].fd = newsock;
+            clist[j].addr = client_addr;
+            printf("port check: %d\n", htons(clist[j].addr.sin_port));
             break;
           }
         }
@@ -90,6 +123,14 @@ int main(int argc, char** argv) {
         EV_SET(&kev, newsock, EVFILT_READ, EV_ADD, 0, 0, NULL);
         ret = kevent(kq, &kev, 1, NULL, 0, NULL);
         if (ret == -1) die("kevent accept");
+
+        printf("socket matrix:\n");
+        for (int x = 0; x < nclient; x++) {
+          for (int y = 0; y < nclient; y++) {
+            printf("%d ", sockmatrix[x][y]);
+          }
+          printf("\n");
+        }
       } else {
         int n = recv(fd, buf, bufsize, 0);
         if (n == -1) die("recv");
@@ -97,21 +138,47 @@ int main(int argc, char** argv) {
           printf("disconnected from %d\n", fd);
           close(fd);
 
+          int receiver = 0;
           cnum -= 1;
           for (int j = 0; j < nclient; j++) {
             if (clist[j].fd == fd) {
               clist[j].fd = -1;
+              receiver = j;
               break;
             }
+          }
+          for (int j = 0; j < nclient; j++) {
+            if (sockmatrix[receiver][j] != -1) {
+              close(sockmatrix[receiver][j]);
+              sockmatrix[receiver][j] = -1;
+            }
+            if (sockmatrix[j][receiver] != -1) {
+              close(sockmatrix[j][receiver]);
+              sockmatrix[j][receiver] = -1;
+            }
+          }
+          printf("socket matrix:\n");
+          for (int x = 0; x < nclient; x++) {
+            for (int y = 0; y < nclient; y++) {
+              printf("%d ", sockmatrix[x][y]);
+            }
+            printf("\n");
           }
         }
         if (n > 0) {
           if (!quiet) printf("data received from %d\n", fd);
           if (!quiet) write(1, buf, n);
 
+          int receiver = 0;
           for (int j = 0; j < nclient; j++) {
-            if (clist[j].fd != -1 && clist[j].fd != fd) {
-              n = send(clist[j].fd, buf, n, 0);
+            if (clist[j].fd == fd) {
+              receiver = j;
+              break;
+            }
+          }
+          for (int j = 0; j < nclient; j++) {
+            if (sockmatrix[receiver][j] != -1) {
+              n = send(sockmatrix[receiver][j], buf, n, 0);
               if (n == -1) die("send");
             }
           }

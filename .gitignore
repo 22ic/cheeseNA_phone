@@ -7,3 +7,5 @@ serv_send.c
 serv_send2
 serv_send2.c
 server
+chatserver
+simulplaytest
