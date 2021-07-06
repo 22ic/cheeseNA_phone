@@ -92,15 +92,20 @@ int main(int argc, char** argv) {
         for (int j = 0; j < nclient; j++) {
           if (clist[j].fd == -1) {
             client_addr.sin_port = htons(atoi(argv[1]) + LISTEN_OFFSET);
+            clist[j].addr.sin_family = client_addr.sin_family;
+            clist[j].addr.sin_addr.s_addr = client_addr.sin_addr.s_addr;
+            clist[j].addr.sin_port = htons(atoi(argv[1]) + LISTEN_OFFSET);
+            printf("port check: %d\n", htons(clist[j].addr.sin_port));
+
             for (int k = 0; k < nclient; k++) {
               if (clist[k].fd != -1) {
                 sockmatrix[k][j] = socket(PF_INET, SOCK_STREAM,
                                           0);  // sock for sending to newsock
                 if (sockmatrix[k][j] == -1) die("socket k j");
 
-                int ret =
-                    connect(sockmatrix[k][j], (struct sockaddr*)&client_addr,
-                            sizeof(client_addr));
+                int ret = connect(sockmatrix[k][j],
+                                  (struct sockaddr*)&(clist[j].addr),
+                                  sizeof(clist[j].addr));
                 if (ret == -1) die("connect k j");
 
                 sockmatrix[j][k] = socket(PF_INET, SOCK_STREAM,
@@ -114,8 +119,6 @@ int main(int argc, char** argv) {
               }
             }
             clist[j].fd = newsock;
-            clist[j].addr = client_addr;
-            printf("port check: %d\n", htons(clist[j].addr.sin_port));
             break;
           }
         }
